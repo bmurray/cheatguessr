@@ -1,5 +1,41 @@
+html,
+body {
+    height: 100vh;
+}
+
+
 .App {
   text-align: center;
+  height: 100vh;
+}
+
+.Map-page {
+  /* display: grid; */
+  /* height: 100vh; */
+  /* grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas: "map ." "map pack"; */
+  height: 100%;
+  /* min-height: 400vh; */
+  /* display: grid; */
+  /* grid-template-rows: 25px 1fr; */
+  position: relative;
+}
+
+.Map-page-map {
+  /* height: 100vh; */
+  /* min-height: 400vh; */
+  height: 100%;
+  z-index: 100;
+}
+.guesses {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 100px;
+
+  background-color: white;
+  z-index: 1000;
 }
 
 .App-logo {
