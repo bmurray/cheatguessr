@@ -36,8 +36,13 @@ body {
 
   background-color: white;
   z-index: 1000;
+  padding: 3px 4px;
 }
-
+.guesses > * {
+  width: 100%;
+  /* padding: 4px 6px; */
+  margin: 2px 3px;
+}
 .App-logo {
   height: 40vmin;
   pointer-events: none;

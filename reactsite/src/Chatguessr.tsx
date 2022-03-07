@@ -106,7 +106,14 @@ interface Guess {
 }
 
 function Chatguessr(props: ChatguessrProps) {
-    let [guesses, setGuesses] = useState<Guess[]>([{ Location: L.latLng(0, 0), Distance: 0 }])
+    let [guesses, setGuesses] = useState<Guess[]>([
+        { Location: L.latLng(0, 0), Distance: 0 },
+        { Location: L.latLng(0, 0), Distance: 0 },
+        { Location: L.latLng(0, 0), Distance: 0 }
+    ])
+    // Because Leaflet is strange, we need to update this; updating the guesses array is not enough
+    let [upd, setUpd] = useState<number>(0)
+
     let [selectedGuess, setSelectedGuess] = useState<number>(0)
     let [location, setLocation] = useState<LatLng>(L.latLng(0, 0))
     useEffect(() => {
@@ -125,22 +132,17 @@ function Chatguessr(props: ChatguessrProps) {
     }, [guesses, setGuesses, setSelectedGuess])
 
     let setDistance = useCallback((distance: number, idx: number) => {
+
         console.log(distance, idx)
         var n = guesses
         var g = n[idx]
         g.Distance = distance
         n[idx] = g
         setGuesses(n)
-        console.log(n)
-    }, [guesses, setGuesses, location, setLocation])
+        setUpd(distance)
 
+    }, [guesses, setGuesses, location, setLocation, setUpd])
 
-    // let [distance, setDistance] = useState<number>(0)
-    // let [guessedDistance, setGuessedDistance] = useState<number>(0)
-    // let [confirmedDistance, setConfirmedDistance] = useState<number>(0)
-    // let [guessLoc, setGuessLoc] = useState<LatLng>(L.latLng(0, 0))
-
-    let [guess, setGuess] = useState("TestLocation")
     let clicked = useCallback((c: LatLng) => {
         console.log(c)
         var n = guesses
@@ -150,34 +152,8 @@ function Chatguessr(props: ChatguessrProps) {
         setGuesses(n)
         setLocation(c)
         console.log(n)
-        // let dist = c.distanceTo(location) / 1000.0
-        // setGuessedDistance(dist)
-        // setGuessLoc(c)
-        // let lat = c.lat
-        // if (lat > 180.0) {
-        //     lat -= 180.0
-        // }
-        // let lng = c.lng
-        // if (lng > 180.0) {
-        //     lng -= 360.0
-        // }
-
-        // let ll = ClampLatLng(c)
-        // console.log(ll.lat, ll.lng)
-        // setGuess("/w " + props.channel + " !g " + ll.lat + ", " + ll.lng)
     }, [guesses, setGuesses, selectedGuess])
 
-    // let changeConfirmed = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
-    //     let x = parseFloat(evt.target.value)
-    //     let n = x * 1000.0
-    //     if (isNaN(n)) {
-    //         return
-    //     }
-    //     setConfirmedDistance(n)
-    // }, [setConfirmedDistance])
-    let copy = useCallback(() => {
-        copyToClipboard(guess)
-    }, [guess])
     return (
         <div className="Map-page" >
             {/* <div >Distance: <input id="distance" type="text" onChange={changeDistance} /> Dist: <input type="text" value={guessedDistance} readOnly={true} />Guess: <input type="text" value={guess} readOnly={true} /> Confirmed: <input type="text" onChange={changeConfirmed} defaultValue="" /><button onClick={copy}>Copy</button></div> */}
@@ -215,9 +191,6 @@ function Chatguessr(props: ChatguessrProps) {
                     </Popup>
                 </Marker>
                 <GuessMarkers guesses={guesses} />
-                {/* <BetterCircle center={location} radius={distance} pathOptions={{ color: 'blue' }} />
-                <BetterCircle center={guessLoc} radius={confirmedDistance} pathOptions={{ color: 'red' }} /> */}
-
             </MapContainer></div >)
 }
 interface GuessMarkersProps {
@@ -227,6 +200,7 @@ function GuessMarkers(props: GuessMarkersProps) {
     return (
         <>
             {props.guesses.map((g: Guess, i: number) => <BetterCircle key={i} center={g.Location} radius={g.Distance} pathOptions={{ color: colors[i % colors.length] }} />)}
+            {/* {props.guesses.map((g: Guess, i: number) => <Circle key={i} center={g.Location} radius={g.Distance} pathOptions={{ color: colors[i % colors.length] }} />)} */}
         </>
     )
 }
@@ -247,7 +221,7 @@ function Guesses(props: GuessesProps) {
     }, [props])
     return (
         <>
-            <input value={channel} onChange={changeChannelEvt} />
+            <div>Name: <input value={channel} onChange={changeChannelEvt} /></div>
             {props.guesses.map((g: Guess, idx: number) => (<GuessPage key={idx} guess={g} Idx={idx} setSelected={props.setSelected} setDistance={props.setDistance} copy={copy} />))}
             <button onClick={props.addGuess}>Add</button>
         </>
@@ -266,7 +240,6 @@ interface GuessPageProps {
 }
 function GuessPage(props: GuessPageProps) {
     let changeDistance = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
-        // console.log(evt.target.value)
         let x = parseFloat(evt.target.value)
         let n = x * 1000.0
         if (isNaN(n)) {
