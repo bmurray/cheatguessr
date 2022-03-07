@@ -1,7 +1,10 @@
 build: bin/cheatguessr.amd64 bin/cheatguessr.arm64 bin/cheatguessr.darwin.arm64 bin/cheatguessr.darwin.amd64 bin/cheatguessr.exe
 
 clean:
-	rm bin/cheatguessr*
+	rm -rf bin/cheatguessr* reactsite/build
+
+reactsite/build/:
+	cd reactsite && npm run build
 
 bin/cheatguessr.amd64: cmd/cheatguessr/main.go reactsite/build/
 	GOOS=linux GOARCH=amd64 go build -o $@ cmd/cheatguessr/main.go
