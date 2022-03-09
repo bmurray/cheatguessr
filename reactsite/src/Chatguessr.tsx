@@ -112,16 +112,32 @@ function Chatguessr(props: ChatguessrProps) {
         { Location: L.latLng(0, 0), Distance: 0 }
     ])
     // Because Leaflet is strange, we need to update this; updating the guesses array is not enough
-    let [upd, setUpd] = useState<number>(0)
+    // let [upd, setUpd] = useState<number>(0)
 
     let [selectedGuess, setSelectedGuess] = useState<number>(0)
     let [location, setLocation] = useState<LatLng>(L.latLng(0, 0))
+    let setSocketLocation = useCallback((ll: LatLng) => {
+        var n: Guess[] = []
+        guesses.forEach((g: Guess) => n.push(g))
+
+        var g = {
+            Location: ll,
+            Distance: 0
+        } as Guess
+        // var g = guesses[idx]
+        // g.Distance = distance
+        n[0] = g
+        setGuesses(n)
+
+    }, [setGuesses, guesses])
     useEffect(() => {
         setLocation(guesses[selectedGuess].Location)
     }, [selectedGuess, guesses])
 
     let addGuess = useCallback(() => {
-        var n = guesses
+        var n: Guess[] = []
+        guesses.forEach((g: Guess) => n.push(g))
+        //gu
         var ng = {
             Location: L.latLng(0, 0),
             Distance: n.length * 10
@@ -133,26 +149,73 @@ function Chatguessr(props: ChatguessrProps) {
 
     let setDistance = useCallback((distance: number, idx: number) => {
 
-        console.log(distance, idx)
-        var n = guesses
-        var g = n[idx]
+        // console.log(distance, idx)
+        //var n = guesses
+        var n: Guess[] = []
+        guesses.forEach((g: Guess) => n.push(g))
+        var g = guesses[idx]
         g.Distance = distance
         n[idx] = g
         setGuesses(n)
-        setUpd(distance)
+        //setUpd(distance)
 
-    }, [guesses, setGuesses, location, setLocation, setUpd])
+    }, [guesses, setGuesses, location, setLocation])
 
     let clicked = useCallback((c: LatLng) => {
-        console.log(c)
+        // console.log(c)
         var n = guesses
         var g = n[selectedGuess]
         g.Location = c
         n[selectedGuess] = g
         setGuesses(n)
         setLocation(c)
-        console.log(n)
+        // console.log(n)
     }, [guesses, setGuesses, selectedGuess])
+    useEffect(() => {
+        console.log("Reconnect")
+        var loc = window.location, new_uri;
+        if (loc.protocol === "https:") {
+            new_uri = "wss:";
+        } else {
+            new_uri = "ws:";
+        }
+        new_uri += "//" + loc.host;
+        new_uri += "/chatguessr";
+        let rws = new ReconnectingWebSocket(new_uri)
+        rws.addEventListener('message', (evt: MessageEvent<any>) => {
+            // console.log(evt)
+            let ll: LatLng = JSON.parse(evt.data)
+            if (ll.lat && ll.lng) {
+                console.log("New Guess: ", ll)
+                // setLocation(ll)
+                setSocketLocation(L.latLng(ll.lat, ll.lng))
+            }
+
+            // let ts: TimerEventStrings = JSON.parse(evt.data)
+
+            // let te: TimerEvent = {
+            //     started: new Date(Date.parse(ts.started)),
+            //     running: ts.running,
+            //     target: new Date(Date.parse(ts.target)),
+
+            // }
+
+            // setTimerEvent(te)
+
+            // let se: SpinEvent = JSON.parse(evt.data)
+            // console.log(se)
+            // if (se.winnings !== undefined) {
+            //     setSegments(se.winnings)
+            // }
+            // if (se.winning !== undefined && se.winning > 0) {
+            //     setWinning(se.winning)
+            // }
+            // if (se.player !== undefined) {
+            //     setPlayer(se.player)
+            // }
+        })
+        return () => rws.close()
+    }, [])
 
     return (
         <div className="Map-page" >
