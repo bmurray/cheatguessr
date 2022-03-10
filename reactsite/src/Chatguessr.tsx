@@ -504,6 +504,10 @@ function SoloChatguessr(props: SoloChatguessrProps) {
             </MapContainer></div >)
 }
 
+
+interface Config {
+    group: boolean
+}
 interface ChatguessrProps {
     //channel: string
     // solo: boolean
@@ -511,6 +515,21 @@ interface ChatguessrProps {
 
 function Chatguessr(props: ChatguessrProps) {
     var [solo, setSolo] = useState<boolean>(false);
+    useEffect(() => {
+        console.log("SOLO Fetch")
+        fetch('/config')
+            .then(r => {
+                if (!r.ok) return Promise.reject()
+                return r.json()
+            })
+            .then(j => {
+                let r: Config = j
+                console.log("Got solo", r)
+                setSolo(!r.group)
+                // setTime(r.time)
+            })
+            .catch(e => console.error(e))
+    }, [])
     return (
         <>
             {solo ? <SoloChatguessr /> : <GroupChatguessr />}

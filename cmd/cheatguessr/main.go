@@ -22,8 +22,10 @@ func main() {
 	dev := flag.Bool("dev", false, "Enabled development proxy mode; dont use this when running standalone")
 	listen := flag.String("listen", ":8080", "Listen on Address and Port")
 	ws := flag.String("ws", "", "Connect to websocket")
+
 	flag.Parse()
 
+	cfg := Config{}
 	mux := http.NewServeMux()
 	if *dev {
 		u, err := url.Parse(*proxy)
@@ -42,11 +44,13 @@ func main() {
 	var mkrs []llMaker
 
 	if *ws != "" {
+		cfg.Group = true
 		mkr := openSocket(*ws, "bot")
 		mkrs = append(mkrs, mkr)
 	}
 
 	mux.Handle("/chatguessr", chatguessr(mkrs...))
+	mux.Handle("/config", ConfigHandler(cfg))
 
 	s := &http.Server{
 		Addr:         *listen,
@@ -56,6 +60,19 @@ func main() {
 	}
 	log.Println(s.ListenAndServe())
 
+}
+
+func ConfigHandler(cfg Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		e := json.NewEncoder(w)
+		if err := e.Encode(cfg); err != nil {
+			log.Println("cannot encode condfig")
+		}
+	}
+}
+
+type Config struct {
+	Group bool `json:"group"`
 }
 
 type OpCode string
@@ -154,14 +171,7 @@ func chatguessr(makers ...llMaker) http.HandlerFunc {
 			rem(llC)
 			send(Guess{Ident: ident, Op: OpCodeDisconnect})
 		}(llC)
-		// lx := LatLng{
-		// 	Lat: 25,
-		// 	Lng: -25,
-		// }
-		// if err := c.WriteJSON(lx); err != nil {
-		// 	log.Println("Cannot write json welcome")
-		// 	return
-		// }
+
 		go func(c *websocket.Conn) {
 			for {
 				var ll Guess
