@@ -21,11 +21,11 @@ func main() {
 	proxy := flag.String("proxy", "http://localhost:3000/", "Address to proxy requests to")
 	dev := flag.Bool("dev", false, "Enabled development proxy mode; dont use this when running standalone")
 	listen := flag.String("listen", ":8080", "Listen on Address and Port")
-	ws := flag.String("ws", "", "Connect to websocket")
-
+	ws := flag.String("ws", "", "Connect to websocket from Bot")
+	group := flag.Bool("group", false, "Enable group mode; automatically enabled with WebSocket")
 	flag.Parse()
 
-	cfg := Config{}
+	cfg := Config{Group: *group}
 	mux := http.NewServeMux()
 	if *dev {
 		u, err := url.Parse(*proxy)
