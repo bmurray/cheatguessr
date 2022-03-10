@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback, ChangeEventHandler } from 'react'
+import React, { useState, useEffect, useCallback, ChangeEventHandler, useReducer, useRef } from 'react'
 import ReconnectingWebSocket from 'reconnecting-websocket'
 import { MapContainer, TileLayer, Marker, Popup, LayersControl, Circle, useMapEvent, useMapEvents, Polygon } from 'react-leaflet'
 import L, { LatLngBoundsExpression, LatLngTuple, LeafletMouseEvent, LatLng, LatLngExpression, PathOptions } from 'leaflet'
+import { act } from 'react-dom/test-utils'
+import { stat } from 'fs'
 
 
 
@@ -92,7 +94,9 @@ function ClampLatLng(ll: LatLng): LatLng {
 
     return L.latLng(lat, lng)
 }
-interface ChatguessrProps {
+
+
+interface GroupChatguessrProps {
     //channel: string
 }
 // interface LatLng {
@@ -103,33 +107,322 @@ interface ChatguessrProps {
 interface Guess {
     Location: LatLng
     Distance: number
+    Ident: string
+    OpCode: string
 }
 
-function Chatguessr(props: ChatguessrProps) {
+type State = {
+    bot: Guess
+    mine: Guess
+    map: Map<string, Guess>
+}
+
+type Actions = { type: "connect", guess: Guess }
+    | { type: "disconnect", guess: Guess }
+    | { type: "message", guess: Guess }
+    | { type: "me", location: LatLng }
+    | { type: "bot", guess: Guess }
+    | { type: "medistance", distance: number }
+    | { type: "botdistance", distance: number }
+
+function GroupChatguessr(props: GroupChatguessrProps) {
+
+    let rwsSocket = useRef<ReconnectingWebSocket>()
+
+    var sendGuess = useCallback((g: Guess) => {
+        if (!rwsSocket.current) {
+            console.log("NO socket")
+            return
+        }
+        // console.log("Send")
+        var c = rwsSocket.current
+        var data: string = JSON.stringify(g)
+        c.send(data)
+    }, [rwsSocket])
+    let [state, dispatch] = useReducer((state: State, action: Actions): State => {
+        switch (action.type) {
+            case 'disconnect':
+                var map = new Map<string, Guess>(state.map)
+                map.delete(action.guess.Ident)
+                return { ...state, map: map }
+            case 'connect':
+            case 'message':
+                var map = new Map<string, Guess>(state.map)
+                map.set(action.guess.Ident, action.guess)
+                return { ...state, map: map }
+            // state.map.set(action.guess.Ident, action.guess)
+            // return { ...state, map: state.map }
+            case 'bot':
+                // state.bot = action.guess
+                return { ...state, bot: { ...state.bot, Location: action.guess.Location } }
+            case 'botdistance':
+                // state.bot = { ...state.bot, Distance: action.distance }
+                return { ...state, bot: { ...state.bot, Distance: action.distance } }
+            case 'me':
+                // state.mine = action.guess
+                return { ...state, mine: { ...state.mine, Location: action.location } }
+            case 'medistance':
+                // state.mine = { ...state.mine, Distance: action.distance }}
+                return { ...state, mine: { ...state.mine, Distance: action.distance } }
+        }
+        return state
+    }, {
+        bot: { Location: L.latLng(-25, 0), Distance: 0, Ident: "bot", OpCode: "" },
+        mine: { Location: L.latLng(25, 0), Distance: 0, Ident: "me", OpCode: "" },
+        map: new Map<string, Guess>()
+    })
+    var [guesses, setGuesses] = useState<Guess[]>([]);
+
+    useEffect(() => {
+        var n: Guess[] = []
+        state.map.forEach((v: Guess, k: string) => n.push(v))
+        setGuesses(n)
+    }, [state, setGuesses])
+
+
+    let clicked = useCallback((c: LatLng) => {
+        dispatch({ type: "me", location: c })
+    }, [dispatch])
+
+    let changeMyDistance = useCallback((d: number) => {
+        dispatch({ type: "medistance", distance: d })
+    }, [dispatch])
+    let changeBotDistance = useCallback((d: number) => {
+        dispatch({ type: "botdistance", distance: d })
+    }, [dispatch])
+
+    useEffect(() => {
+        sendGuess(state.mine)
+    }, [state.mine])
+
+    useEffect(() => {
+        console.log("Reconnect")
+        var loc = window.location, new_uri;
+        if (loc.protocol === "https:") {
+            new_uri = "wss:";
+        } else {
+            new_uri = "ws:";
+        }
+        new_uri += "//" + loc.host;
+        new_uri += "/chatguessr";
+        let rws = new ReconnectingWebSocket(new_uri)
+        rws.addEventListener('message', (evt: MessageEvent<any>) => {
+
+            let g: Guess = JSON.parse(evt.data)
+            if (g.Location && g.Ident) {
+                console.log("New Guess: ", g)
+                var gx: Guess = { ...g, Location: L.latLng(g.Location.lat, g.Location.lng) }
+                switch (gx.OpCode) {
+                    case "bot":
+                        dispatch({ type: "bot", guess: gx })
+                        break;
+                    case "disconnect":
+                        dispatch({ type: "disconnect", guess: gx })
+                        break;
+                    default:
+                        dispatch({ type: "message", guess: gx })
+
+                }
+            }
+        })
+        rwsSocket.current = rws
+        return () => rws.close()
+    }, [rwsSocket])
+
+    return (
+        <div className="Map-page" >
+            <div className='guesses'>
+                <GroupGuesses myLocation={state.mine} botLocation={state.bot} myDistance={changeMyDistance} botDistance={changeBotDistance} />
+            </div>
+            <MapContainer className="Map-page-map" center={[0, 0]} zoom={2} scrollWheelZoom={true}>
+                <ClickLocation clicked={clicked} />
+                <LayersControl position="topleft">
+                    <LayersControl.BaseLayer name="OpenStreetMap">
+                        <TileLayer
+                            attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer checked name="Google Rodmap">
+                        <TileLayer url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" subdomains={["mt0", "mt1", "mt2", "mt3"]} ></TileLayer>
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="Google Hybrid">
+                        <TileLayer url="https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}" subdomains={["mt0", "mt1", "mt2", "mt3"]} ></TileLayer>
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="Google terrain">
+                        <TileLayer url="https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}" subdomains={["mt0", "mt1", "mt2", "mt3"]} ></TileLayer>
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="Open Topo Map">
+                        <TileLayer url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" ></TileLayer>
+                    </LayersControl.BaseLayer>
+                    <LayersControl.BaseLayer name="esriTopographic">
+                        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}" ></TileLayer>
+                    </LayersControl.BaseLayer>
+                </LayersControl>
+                <Marker position={state.mine.Location}>
+                    <Popup>
+                        A pretty CSS3 popup. <br /> Easily customizable.
+                    </Popup>
+                </Marker>
+                <BetterCircle center={state.mine.Location} radius={state.mine.Distance} pathOptions={{ color: "blue" }} />
+                <BetterCircle center={state.bot.Location} radius={state.bot.Distance} pathOptions={{ color: "red" }} />
+                <GuessMarkers guesses={guesses} />
+            </MapContainer></div >)
+}
+interface GuessMarkersProps {
+    guesses: Guess[]
+}
+function GuessMarkers(props: GuessMarkersProps) {
+    return (
+        <>
+            {props.guesses.map((g: Guess, i: number) => <BetterCircle key={i} center={g.Location} radius={g.Distance} pathOptions={{ color: colors[i % colors.length] }} />)}
+        </>
+    )
+}
+interface GroupGuessesProps {
+    myLocation: Guess
+    botLocation: Guess
+    botDistance: (d: number) => void
+    myDistance: (d: number) => void
+}
+function GroupGuesses(props: GroupGuessesProps) {
+    let [channel, changeChannel] = useState<string>("")
+    let changeChannelEvt = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
+        changeChannel(evt.target.value)
+    }, [])
+    let changeBotDistance = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
+        let x = parseFloat(evt.target.value)
+        let n = x * 1000.0
+        if (isNaN(n)) {
+            return
+        }
+        props.botDistance(n)
+        // props.setDistance(n, props.Idx)
+    }, [props])
+    let changeMyDistance = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
+        let x = parseFloat(evt.target.value)
+        let n = x * 1000.0
+        if (isNaN(n)) {
+            return
+        }
+        props.myDistance(n)
+        // props.setDistance(n, props.Idx)
+    }, [props])
+
+    var copyBot = useCallback(() => {
+        copyGuess(channel, props.botLocation.Location)
+    }, [channel, props])
+    var copyMine = useCallback(() => {
+        copyGuess(channel, props.myLocation.Location)
+    }, [channel, props])
+    return (
+        <>
+            <div>Name: <input value={channel} onChange={changeChannelEvt} /></div>
+            <div className='guessPage' > <input type="text" onChange={changeBotDistance} /><button onClick={copyBot}>Copy</button></div>
+            <div className='guessPage' > <input type="text" onChange={changeMyDistance} /><button onClick={copyMine}>Copy</button></div>
+        </>
+    )
+
+}
+interface GuessesProps {
+    guesses: Guess[]
+    addGuess: () => void
+    setSelected: (n: number) => void
+    setDistance: (d: number, idx: number) => void
+}
+function Guesses(props: GuessesProps) {
+    let [channel, changeChannel] = useState<string>("")
+    var copy = useCallback((ll: LatLng) => {
+        copyGuess(channel, ll)
+    }, [channel])
+
+    let changeChannelEvt = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
+        changeChannel(evt.target.value)
+    }, [])
+
+    return (
+        <>
+            <div>Name: <input value={channel} onChange={changeChannelEvt} /></div>
+            {props.guesses.map((g: Guess, idx: number) => (<GuessPage key={idx} guess={g} Idx={idx} setSelected={props.setSelected} setDistance={props.setDistance} copy={copy} />))}
+            <button onClick={props.addGuess}>Add</button>
+        </>
+    )
+}
+
+var colors: string[] = ['green', 'blue']
+
+interface GuessPageProps {
+    guess: Guess
+    Idx: number
+    setSelected: (n: number) => void
+    setDistance: (d: number, idx: number) => void
+    copy: (ll: LatLng) => void
+
+}
+function GuessPage(props: GuessPageProps) {
+    let changeDistance = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
+        let x = parseFloat(evt.target.value)
+        let n = x * 1000.0
+        if (isNaN(n)) {
+            return
+        }
+        props.setDistance(n, props.Idx)
+    }, [props])
+
+    var style = { color: colors[props.Idx % colors.length] }
+    return (
+        <div className='guessPage' style={style} onClick={() => props.setSelected(props.Idx)}>
+            {props.Idx} <input id="distance" type="text" onChange={changeDistance} /><button onClick={() => props.copy(props.guess.Location)}>Copy</button>
+        </div>
+    )
+}
+function copyGuess(chan: string, c: LatLng) {
+    let ll = ClampLatLng(c)
+    var str = "/w " + chan + " !g " + ll.lat + ", " + ll.lng
+    copyToClipboard(str)
+}
+
+// https://stackoverflow.com/questions/51805395/navigator-clipboard-is-undefined
+function copyToClipboard(textToCopy: string) {
+    // navigator clipboard api needs a secure context (https)
+    if (navigator.clipboard && window.isSecureContext) {
+        // navigator clipboard api method'
+        return navigator.clipboard.writeText(textToCopy);
+    } else {
+        // text area method
+        let textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        // make the textarea out of viewport
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        return new Promise((res: (value: unknown) => void, rej: () => void) => {
+            // here the magic happens
+            document.execCommand('copy') ? res(null) : rej();
+            textArea.remove();
+        });
+    }
+}
+
+
+interface SoloChatguessrProps {
+    //channel: string
+}
+function SoloChatguessr(props: SoloChatguessrProps) {
     let [guesses, setGuesses] = useState<Guess[]>([
-        { Location: L.latLng(0, 0), Distance: 0 },
-        { Location: L.latLng(0, 0), Distance: 0 },
-        { Location: L.latLng(0, 0), Distance: 0 }
+        { Location: L.latLng(0, 0), Distance: 0, Ident: "", OpCode: "" },
+        { Location: L.latLng(0, 0), Distance: 0, Ident: "", OpCode: "" },
+        { Location: L.latLng(0, 0), Distance: 0, Ident: "", OpCode: "" }
     ])
     // Because Leaflet is strange, we need to update this; updating the guesses array is not enough
     // let [upd, setUpd] = useState<number>(0)
 
     let [selectedGuess, setSelectedGuess] = useState<number>(0)
     let [location, setLocation] = useState<LatLng>(L.latLng(0, 0))
-    let setSocketLocation = useCallback((ll: LatLng) => {
-        var n: Guess[] = []
-        guesses.forEach((g: Guess) => n.push(g))
 
-        var g = {
-            Location: ll,
-            Distance: 0
-        } as Guess
-        // var g = guesses[idx]
-        // g.Distance = distance
-        n[0] = g
-        setGuesses(n)
-
-    }, [setGuesses, guesses])
     useEffect(() => {
         setLocation(guesses[selectedGuess].Location)
     }, [selectedGuess, guesses])
@@ -171,52 +464,6 @@ function Chatguessr(props: ChatguessrProps) {
         setLocation(c)
         // console.log(n)
     }, [guesses, setGuesses, selectedGuess])
-    useEffect(() => {
-        console.log("Reconnect")
-        var loc = window.location, new_uri;
-        if (loc.protocol === "https:") {
-            new_uri = "wss:";
-        } else {
-            new_uri = "ws:";
-        }
-        new_uri += "//" + loc.host;
-        new_uri += "/chatguessr";
-        let rws = new ReconnectingWebSocket(new_uri)
-        rws.addEventListener('message', (evt: MessageEvent<any>) => {
-            // console.log(evt)
-            let ll: LatLng = JSON.parse(evt.data)
-            if (ll.lat && ll.lng) {
-                console.log("New Guess: ", ll)
-                // setLocation(ll)
-                setSocketLocation(L.latLng(ll.lat, ll.lng))
-            }
-
-            // let ts: TimerEventStrings = JSON.parse(evt.data)
-
-            // let te: TimerEvent = {
-            //     started: new Date(Date.parse(ts.started)),
-            //     running: ts.running,
-            //     target: new Date(Date.parse(ts.target)),
-
-            // }
-
-            // setTimerEvent(te)
-
-            // let se: SpinEvent = JSON.parse(evt.data)
-            // console.log(se)
-            // if (se.winnings !== undefined) {
-            //     setSegments(se.winnings)
-            // }
-            // if (se.winning !== undefined && se.winning > 0) {
-            //     setWinning(se.winning)
-            // }
-            // if (se.player !== undefined) {
-            //     setPlayer(se.player)
-            // }
-        })
-        return () => rws.close()
-    }, [])
-
     return (
         <div className="Map-page" >
             {/* <div >Distance: <input id="distance" type="text" onChange={changeDistance} /> Dist: <input type="text" value={guessedDistance} readOnly={true} />Guess: <input type="text" value={guess} readOnly={true} /> Confirmed: <input type="text" onChange={changeConfirmed} defaultValue="" /><button onClick={copy}>Copy</button></div> */}
@@ -256,98 +503,19 @@ function Chatguessr(props: ChatguessrProps) {
                 <GuessMarkers guesses={guesses} />
             </MapContainer></div >)
 }
-interface GuessMarkersProps {
-    guesses: Guess[]
+
+interface ChatguessrProps {
+    //channel: string
+    // solo: boolean
 }
-function GuessMarkers(props: GuessMarkersProps) {
+
+function Chatguessr(props: ChatguessrProps) {
+    var [solo, setSolo] = useState<boolean>(false);
     return (
         <>
-            {props.guesses.map((g: Guess, i: number) => <BetterCircle key={i} center={g.Location} radius={g.Distance} pathOptions={{ color: colors[i % colors.length] }} />)}
-            {/* {props.guesses.map((g: Guess, i: number) => <Circle key={i} center={g.Location} radius={g.Distance} pathOptions={{ color: colors[i % colors.length] }} />)} */}
+            {solo ? <SoloChatguessr /> : <GroupChatguessr />}
         </>
     )
-}
-interface GuessesProps {
-    guesses: Guess[]
-    addGuess: () => void
-    setSelected: (n: number) => void
-    setDistance: (d: number, idx: number) => void
-}
-function Guesses(props: GuessesProps) {
-    let [channel, changeChannel] = useState<string>("")
-    var copy = useCallback((ll: LatLng) => {
-        copyGuess(channel, ll)
-    }, [channel])
-
-    let changeChannelEvt = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
-        changeChannel(evt.target.value)
-    }, [props])
-    return (
-        <>
-            <div>Name: <input value={channel} onChange={changeChannelEvt} /></div>
-            {props.guesses.map((g: Guess, idx: number) => (<GuessPage key={idx} guess={g} Idx={idx} setSelected={props.setSelected} setDistance={props.setDistance} copy={copy} />))}
-            <button onClick={props.addGuess}>Add</button>
-        </>
-    )
-}
-
-var colors: string[] = ['red', 'green', 'blue', 'yellow', 'magenta']
-
-interface GuessPageProps {
-    guess: Guess
-    Idx: number
-    setSelected: (n: number) => void
-    setDistance: (d: number, idx: number) => void
-    copy: (ll: LatLng) => void
-
-}
-function GuessPage(props: GuessPageProps) {
-    let changeDistance = useCallback<ChangeEventHandler<HTMLInputElement>>((evt: React.ChangeEvent<HTMLInputElement>) => {
-        let x = parseFloat(evt.target.value)
-        let n = x * 1000.0
-        if (isNaN(n)) {
-            return
-        }
-        props.setDistance(n, props.Idx)
-    }, [props])
-
-    var style = { color: colors[props.Idx % colors.length] }
-    return (
-        <div className='guessPage' style={style} onClick={() => props.setSelected(props.Idx)}>
-            {props.Idx} <input id="distance" type="text" onChange={changeDistance} /><button onClick={() => props.copy(props.guess.Location)}>Copy</button>
-        </div>
-    )
-}
-function copyGuess(chan: string, c: LatLng) {
-    let ll = ClampLatLng(c)
-    // console.log(ll.lat, ll.lng)
-    var str = "/w " + chan + " !g " + ll.lat + ", " + ll.lng
-    copyToClipboard(str)
-}
-
-// https://stackoverflow.com/questions/51805395/navigator-clipboard-is-undefined
-function copyToClipboard(textToCopy: string) {
-    // navigator clipboard api needs a secure context (https)
-    if (navigator.clipboard && window.isSecureContext) {
-        // navigator clipboard api method'
-        return navigator.clipboard.writeText(textToCopy);
-    } else {
-        // text area method
-        let textArea = document.createElement("textarea");
-        textArea.value = textToCopy;
-        // make the textarea out of viewport
-        textArea.style.position = "fixed";
-        textArea.style.left = "-999999px";
-        textArea.style.top = "-999999px";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        return new Promise((res: (value: unknown) => void, rej: () => void) => {
-            // here the magic happens
-            document.execCommand('copy') ? res(null) : rej();
-            textArea.remove();
-        });
-    }
 }
 
 
