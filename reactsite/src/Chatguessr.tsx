@@ -349,7 +349,7 @@ function Guesses(props: GuessesProps) {
     )
 }
 
-var colors: string[] = ['green', 'blue']
+var colors: string[] = ['green', 'orange', 'yellow', 'magenta']
 
 interface GuessPageProps {
     guess: Guess
